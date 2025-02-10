@@ -1,0 +1,92 @@
+import { query } from './db';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import { v4 as uuidv4 } from 'uuid';
+
+const JWT_SECRET = process.env.JWT_SECRET || 'tu_secreto_jwt';
+
+export async function authenticateUser(email: string, password: string) {
+  try {
+    // Buscar usuario por email
+    const [user] = await query(
+      'SELECT id, email, password_hash, nombre_completo FROM usuarios WHERE email = ?',
+      [email]
+    );
+
+    if (!user) {
+      throw new Error('Usuario no encontrado');
+    }
+
+    // Verificar contraseña
+    const isValid = await bcrypt.compare(password, user.password_hash);
+    if (!isValid) {
+      throw new Error('Contraseña incorrecta');
+    }
+
+    // Generar token JWT
+    const token = jwt.sign(
+      {
+        userId: user.id,
+        email: user.email,
+        nombreCompleto: user.nombre_completo
+      },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    return {
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        nombreCompleto: user.nombre_completo
+      }
+    };
+  } catch (error) {
+    console.error('Error en la autenticación:', error);
+    throw error;
+  }
+}
+
+export async function registerUser(userData: {
+  email: string;
+  password: string;
+  nombreCompleto: string;
+  telefono?: string;
+}) {
+  try {
+    // Verificar si el email ya existe
+    const [existingUser] = await query('SELECT id FROM usuarios WHERE email = ?', [userData.email]);
+    if (existingUser) {
+      throw new Error('El correo electrónico ya está registrado');
+    }
+
+    // Generar hash de la contraseña
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(userData.password, salt);
+
+    // Insertar nuevo usuario
+    const userId = uuidv4();
+    await query(
+      'INSERT INTO usuarios (id, email, password_hash, nombre_completo, telefono) VALUES (?, ?, ?, ?, ?)',
+      [userId, userData.email, passwordHash, userData.nombreCompleto, userData.telefono || null]
+    );
+
+    return {
+      id: userId,
+      email: userData.email,
+      nombreCompleto: userData.nombreCompleto
+    };
+  } catch (error) {
+    console.error('Error en el registro:', error);
+    throw error;
+  }
+}
+
+export function verifyToken(token: string) {
+  try {
+    return jwt.verify(token, JWT_SECRET);
+  } catch (error) {
+    throw new Error('Token inválido');
+  }
+}

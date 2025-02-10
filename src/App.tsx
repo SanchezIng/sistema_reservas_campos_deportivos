@@ -6,6 +6,8 @@ import Home from './pages/Home';
 import Instalaciones from './pages/Instalaciones';
 import DetalleInstalacion from './pages/DetalleInstalacion';
 import Reservar from './pages/Reservar';
+import Login from './pages/Login';
+import Registro from './pages/Registro';
 
 function App() {
   return (
@@ -18,6 +20,8 @@ function App() {
             <Route path="/instalaciones" element={<Instalaciones />} />
             <Route path="/instalaciones/:id" element={<DetalleInstalacion />} />
             <Route path="/reservar" element={<Reservar />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/registro" element={<Registro />} />
           </Routes>
         </main>
         <Footer />
