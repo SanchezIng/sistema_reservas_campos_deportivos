@@ -1,9 +1,17 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Mail, Lock, AlertCircle } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+
+
+
+// para ngrok
+import { config } from '../config/env';
+
 
 export default function Login() {
   const navigate = useNavigate();
+  const { login } = useAuth();
   const [formData, setFormData] = useState({
     email: '',
     password: ''
@@ -17,23 +25,28 @@ export default function Login() {
     setIsLoading(true);
 
     try {
-      const response = await fetch('/api/auth/login', {
+      const response = await fetch(`${config.apiUrl}/api/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(formData),
+        credentials: 'include'
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        throw new Error('Credenciales inválidas');
+        throw new Error(data.error || 'Error al iniciar sesión');
       }
 
-      const data = await response.json();
-      // Aquí guardaríamos el token en localStorage o en un estado global
-      localStorage.setItem('authToken', data.token);
-      navigate('/'); // Redirigir al inicio después del login
-    } catch (err) {
+      // Usar el contexto de autenticación para guardar los datos
+      login(data.token, data.user);
+      
+      // Redirigir al inicio
+      navigate('/');
+    } catch (err: any) {
+      console.error('Error de login:', err);
       setError('Email o contraseña incorrectos');
     } finally {
       setIsLoading(false);

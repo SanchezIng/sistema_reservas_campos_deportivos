@@ -1,4 +1,4 @@
-import { query } from './db';
+import { query, transaction } from './db';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
@@ -8,17 +8,26 @@ const JWT_SECRET = process.env.JWT_SECRET || 'tu_secreto_jwt';
 export async function authenticateUser(email: string, password: string) {
   try {
     // Buscar usuario por email
-    const [user] = await query(
+    const results: any = await query(
       'SELECT id, email, password_hash, nombre_completo FROM usuarios WHERE email = ?',
       [email]
     );
 
-    if (!user) {
+    console.log('Resultados de la consulta:', results); // Debug
+
+    // Verificar si hay resultados
+    if (!results || results.length === 0) {
+      console.log('No se encontró el usuario'); // Debug
       throw new Error('Usuario no encontrado');
     }
 
+    const user = results[0];
+    console.log('Usuario encontrado:', { ...user, password_hash: '[PROTECTED]' }); // Debug
+
     // Verificar contraseña
     const isValid = await bcrypt.compare(password, user.password_hash);
+    console.log('Resultado de la comparación de contraseñas:', isValid); // Debug
+
     if (!isValid) {
       throw new Error('Contraseña incorrecta');
     }
@@ -43,7 +52,7 @@ export async function authenticateUser(email: string, password: string) {
       }
     };
   } catch (error) {
-    console.error('Error en la autenticación:', error);
+    console.error('Error detallado en la autenticación:', error);
     throw error;
   }
 }
@@ -54,10 +63,14 @@ export async function registerUser(userData: {
   nombreCompleto: string;
   telefono?: string;
 }) {
-  try {
+  return transaction(async (connection) => {
     // Verificar si el email ya existe
-    const [existingUser] = await query('SELECT id FROM usuarios WHERE email = ?', [userData.email]);
-    if (existingUser) {
+    const [existingUsers]: any = await connection.execute(
+      'SELECT id FROM usuarios WHERE email = ?',
+      [userData.email]
+    );
+
+    if (existingUsers && existingUsers.length > 0) {
       throw new Error('El correo electrónico ya está registrado');
     }
 
@@ -67,7 +80,7 @@ export async function registerUser(userData: {
 
     // Insertar nuevo usuario
     const userId = uuidv4();
-    await query(
+    await connection.execute(
       'INSERT INTO usuarios (id, email, password_hash, nombre_completo, telefono) VALUES (?, ?, ?, ?, ?)',
       [userId, userData.email, passwordHash, userData.nombreCompleto, userData.telefono || null]
     );
@@ -77,10 +90,7 @@ export async function registerUser(userData: {
       email: userData.email,
       nombreCompleto: userData.nombreCompleto
     };
-  } catch (error) {
-    console.error('Error en el registro:', error);
-    throw error;
-  }
+  });
 }
 
 export function verifyToken(token: string) {

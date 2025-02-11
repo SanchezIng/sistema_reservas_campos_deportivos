@@ -2,6 +2,9 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Mail, Lock, User, Phone, AlertCircle } from 'lucide-react';
 
+// Para ngrok
+import { config } from '../config/env';
+
 export default function Registro() {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
@@ -18,7 +21,6 @@ export default function Registro() {
     e.preventDefault();
     setError('');
 
-    // Validaciones
     if (formData.password !== formData.confirmPassword) {
       setError('Las contraseñas no coinciden');
       return;
@@ -32,7 +34,7 @@ export default function Registro() {
     setIsLoading(true);
 
     try {
-      const response = await fetch('/api/auth/registro', {
+      const response = await fetch(`${config.apiUrl}/api/auth/registro`,  {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -45,15 +47,15 @@ export default function Registro() {
         }),
       });
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || 'Error al registrar usuario');
-      }
+      const data = await response.json();
 
-      // Registro exitoso
+      if (!response.ok) {
+        throw new Error(data.error || 'Error al registrar usuario');
+      }
+      
       navigate('/login', { state: { message: '¡Registro exitoso! Por favor, inicia sesión.' } });
     } catch (err: any) {
-      setError(err.message || 'Error al registrar usuario');
+      setError(err.message || 'Error al registrar usuario. Por favor, intenta nuevamente.');
     } finally {
       setIsLoading(false);
     }
@@ -156,7 +158,7 @@ export default function Registro() {
                   value={formData.telefono}
                   onChange={handleChange}
                   className="appearance-none relative block w-full pl-10 pr-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-lg focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                  placeholder="+51 123 456 789"
+                  placeholder="+51 123456789"
                 />
               </div>
             </div>
@@ -173,6 +175,7 @@ export default function Registro() {
                   id="password"
                   name="password"
                   type="password"
+                  autoComplete="new-password"
                   required
                   value={formData.password}
                   onChange={handleChange}
@@ -194,6 +197,7 @@ export default function Registro() {
                   id="confirmPassword"
                   name="confirmPassword"
                   type="password"
+                  autoComplete="new-password"
                   required
                   value={formData.confirmPassword}
                   onChange={handleChange}

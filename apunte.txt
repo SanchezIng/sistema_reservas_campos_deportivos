@@ -1,0 +1,1 @@
+se ha creado una configuracion, y en archivo de login y regsutro para poder registar debo cambiar a localhost, aunque no es necesario ya que uso la configuracion de context
