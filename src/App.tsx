@@ -10,6 +10,11 @@ import Reservar from './pages/Reservar';
 import Login from './pages/Login';
 import Registro from './pages/Registro';
 
+
+import Disponibilidad from './pages/Disponibilidad';
+import AdminDashboard from './pages/Admin/Dashboard';
+import GestionInstalaciones from './pages/Admin/GestionInstalaciones';
+
 function App() {
   return (
     <AuthProvider>
@@ -24,6 +29,9 @@ function App() {
               <Route path="/reservar" element={<Reservar />} />
               <Route path="/login" element={<Login />} />
               <Route path="/registro" element={<Registro />} />
+              <Route path="/disponibilidad" element={<Disponibilidad />} />
+              <Route path="/admin" element={<AdminDashboard />} />
+              
             </Routes>
           </main>
           <Footer />

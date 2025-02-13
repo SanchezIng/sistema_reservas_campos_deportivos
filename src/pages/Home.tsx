@@ -45,16 +45,16 @@ export default function Home() {
           <p className="text-xl mb-8">Reserva fácilmente canchas de fútbol, básquet y piscinas en línea</p>
           <div className="flex flex-wrap justify-center gap-4">
             <Link
-              to="/reservar"
+              to="/instalaciones"
               className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-semibold text-lg transition-colors"
             >
               Reservar Ahora
             </Link>
             <Link
-              to="/instalaciones"
+              to="/disponibilidad"
               className="bg-white text-blue-600 hover:bg-gray-100 px-8 py-3 rounded-lg font-semibold text-lg transition-colors"
             >
-              Ver Instalaciones
+              Ver Disponibilidad
             </Link>
           </div>
         </div>

@@ -1,52 +1,57 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 
 interface User {
-    id: string;
-    email: string;
-    nombreCompleto: string;
+  id: string;
+  email: string;
+  nombreCompleto: string;
+  role?: 'admin' | 'user';
 }
 
 interface AuthContextType {
-    user: User | null;
-    isAuthenticated: boolean;
-    login: (token: string, userData: User) => void;
-    logout: () => void;
+  user: User | null;
+  isAuthenticated: boolean;
+  isAdmin: boolean;
+  login: (token: string, userData: User) => void;
+  logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-    const [user, setUser] = useState<User | null>(null);
-    const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
-    useEffect(() => {
-    // Verificar si hay un token guardado al cargar la aplicación
+  useEffect(() => {
     const token = localStorage.getItem('authToken');
     const savedUser = localStorage.getItem('user');
     
     if (token && savedUser) {
-        const userData = JSON.parse(savedUser);
-        setUser(userData);
-        setIsAuthenticated(true);
+      const userData = JSON.parse(savedUser);
+      setUser(userData);
+      setIsAuthenticated(true);
+      setIsAdmin(userData.role === 'admin');
     }
-    }, []);
+  }, []);
 
-    const login = (token: string, userData: User) => {
+  const login = (token: string, userData: User) => {
     localStorage.setItem('authToken', token);
     localStorage.setItem('user', JSON.stringify(userData));
     setUser(userData);
     setIsAuthenticated(true);
-    };
+    setIsAdmin(userData.role === 'admin');
+  };
 
-    const logout = () => {
+  const logout = () => {
     localStorage.removeItem('authToken');
     localStorage.removeItem('user');
     setUser(null);
     setIsAuthenticated(false);
-    };
+    setIsAdmin(false);
+  };
 
-    return (
-    <AuthContext.Provider value={{ user, isAuthenticated, login, logout }}>
+  return (
+    <AuthContext.Provider value={{ user, isAuthenticated, isAdmin, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

@@ -1,10 +1,11 @@
-import React from 'react';
-import { Link } from 'react-router-dom';
-import { Calendar, User, LogIn, LogOut } from 'lucide-react';
+
+import { Link, useNavigate } from 'react-router-dom';
+import { Calendar, User, LogIn, LogOut, Settings } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export default function Navbar() {
-  const { isAuthenticated, user, logout } = useAuth();
+  const { isAuthenticated, isAdmin, user, logout } = useAuth();
+  const navigate = useNavigate();
 
   return (
     <nav className="bg-white shadow-lg">
@@ -31,8 +32,20 @@ export default function Navbar() {
                   <User className="h-5 w-5 mr-1" />
                   <span className="text-sm font-medium">{user?.nombreCompleto}</span>
                 </div>
+                {isAdmin && (
+                  <Link
+                    to="/admin"
+                    className="inline-flex items-center text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium"
+                  >
+                    <Settings className="h-5 w-5 mr-1" />
+                    Panel Admin
+                  </Link>
+                )}
                 <button
-                  onClick={logout}
+                  onClick={() => {
+                    logout();
+                    navigate('/');
+                  }}
                   className="inline-flex items-center text-gray-700 hover:text-blue-600 px-3 py-2 rounded-md text-sm font-medium"
                 >
                   <LogOut className="h-5 w-5 mr-1" />
