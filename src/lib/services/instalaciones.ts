@@ -1,5 +1,4 @@
-import { query } from '../db';
-import { v4 as uuidv4 } from 'uuid';
+import { config } from '../../config/env';
 import type { RowDataPacket } from 'mysql2';
 
 export interface Instalacion extends RowDataPacket {
@@ -16,10 +15,12 @@ export interface Instalacion extends RowDataPacket {
 
 export async function getInstalaciones(): Promise<Instalacion[]> {
   try {
-    const instalaciones = await query(
-      'SELECT * FROM instalaciones ORDER BY nombre'
-    ) as Instalacion[];
-    return instalaciones;
+    const response = await fetch(`${config.apiUrl}/api/instalaciones`);
+    if (!response.ok) {
+      throw new Error('Error al obtener instalaciones');
+    }
+    const data = await response.json();
+    return data.data;
   } catch (error) {
     console.error('Error al obtener instalaciones:', error);
     throw error;
@@ -28,11 +29,12 @@ export async function getInstalaciones(): Promise<Instalacion[]> {
 
 export async function getInstalacionById(id: string): Promise<Instalacion | null> {
   try {
-    const [instalacion] = await query(
-      'SELECT * FROM instalaciones WHERE id = ?',
-      [id]
-    ) as Instalacion[];
-    return instalacion || null;
+    const response = await fetch(`${config.apiUrl}/api/instalaciones/${id}`);
+    if (!response.ok) {
+      throw new Error('Error al obtener instalación');
+    }
+    const data = await response.json();
+    return data.data;
   } catch (error) {
     console.error('Error al obtener instalación:', error);
     throw error;
@@ -41,25 +43,18 @@ export async function getInstalacionById(id: string): Promise<Instalacion | null
 
 export async function createInstalacion(instalacion: Omit<Instalacion, 'id'>) {
   try {
-    const id = uuidv4();
-    await query(
-      `INSERT INTO instalaciones (
-        id, nombre, tipo, superficie, descripcion, 
-        precio_por_hora, imagen_url, estado, capacidad
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        id,
-        instalacion.nombre,
-        instalacion.tipo,
-        instalacion.superficie,
-        instalacion.descripcion,
-        instalacion.precio_por_hora,
-        instalacion.imagen_url,
-        instalacion.estado,
-        instalacion.capacidad
-      ]
-    );
-    return { id, ...instalacion };
+    const response = await fetch(`${config.apiUrl}/api/instalaciones`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(instalacion),
+    });
+    if (!response.ok) {
+      throw new Error('Error al crear instalación');
+    }
+    const data = await response.json();
+    return data.data;
   } catch (error) {
     console.error('Error al crear instalación:', error);
     throw error;
@@ -68,20 +63,18 @@ export async function createInstalacion(instalacion: Omit<Instalacion, 'id'>) {
 
 export async function updateInstalacion(id: string, instalacion: Partial<Omit<Instalacion, 'id' | 'RowDataPacket'>>) {
   try {
-    const updates = Object.entries(instalacion)
-      .filter(([_, value]) => value !== undefined)
-      .map(([key]) => `${key} = ?`);
-    
-    const values = Object.entries(instalacion)
-      .filter(([_, value]) => value !== undefined)
-      .map(([_, value]) => value);
-
-    await query(
-      `UPDATE instalaciones SET ${updates.join(', ')} WHERE id = ?`,
-      [...values, id]
-    );
-    
-    return { id, ...instalacion };
+    const response = await fetch(`${config.apiUrl}/api/instalaciones/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(instalacion),
+    });
+    if (!response.ok) {
+      throw new Error('Error al actualizar instalación');
+    }
+    const data = await response.json();
+    return data.data;
   } catch (error) {
     console.error('Error al actualizar instalación:', error);
     throw error;
@@ -90,7 +83,12 @@ export async function updateInstalacion(id: string, instalacion: Partial<Omit<In
 
 export async function deleteInstalacion(id: string) {
   try {
-    await query('DELETE FROM instalaciones WHERE id = ?', [id]);
+    const response = await fetch(`${config.apiUrl}/api/instalaciones/${id}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) {
+      throw new Error('Error al eliminar instalación');
+    }
     return true;
   } catch (error) {
     console.error('Error al eliminar instalación:', error);

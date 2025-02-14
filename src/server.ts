@@ -55,6 +55,47 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+// Rutas de usuarios
+app.get('/api/usuarios', async (req, res) => {
+  try {
+    const usuarios = await query(
+      'SELECT id, email, nombre_completo, telefono, role, created_at FROM usuarios ORDER BY created_at DESC'
+    );
+    res.json({ success: true, data: usuarios });
+  } catch (error: any) {
+    console.error('Error al obtener usuarios:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.put('/api/usuarios/:id/role', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { role } = req.body;
+    
+    if (!['admin', 'user'].includes(role)) {
+      throw new Error('Rol inválido');
+    }
+
+    await query('UPDATE usuarios SET role = ? WHERE id = ?', [role, id]);
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Error al actualizar rol:', error);
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+app.delete('/api/usuarios/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await query('DELETE FROM usuarios WHERE id = ?', [id]);
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Error al eliminar usuario:', error);
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
 // Rutas de instalaciones
 app.get('/api/instalaciones', async (req, res) => {
   try {
@@ -124,6 +165,40 @@ app.get('/api/reservas', async (req, res) => {
   }
 });
 
+// Ruta para obtener reservas (admin)
+app.get('/api/reservas/admin', async (req, res) => {
+  try {
+    const { fecha, estado } = req.query;
+    let sql = `
+      SELECT r.*, 
+             i.nombre as instalacion_nombre,
+             u.nombre_completo as usuario_nombre
+      FROM reservas r
+      JOIN instalaciones i ON r.instalacion_id = i.id
+      JOIN usuarios u ON r.usuario_id = u.id
+      WHERE 1=1
+    `;
+    const params = [];
+
+    if (fecha) {
+      sql += ' AND DATE(r.hora_inicio) = DATE(?)';
+      params.push(fecha);
+    }
+
+    if (estado && estado !== 'todos') {
+      sql += ' AND r.estado = ?';
+      params.push(estado);
+    }
+
+    sql += ' ORDER BY r.hora_inicio DESC';
+
+    const reservas = await query(sql, params);
+    res.json({ success: true, data: reservas });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 app.post('/api/reservas', async (req, res) => {
   try {
     const { instalacion_id, usuario_id, hora_inicio, hora_fin, estado, precio_total } = req.body;
@@ -168,6 +243,98 @@ app.post('/api/reservas', async (req, res) => {
   }
 });
 
+// Rutas para reportes
+app.get('/api/reportes/mensual', async (req, res) => {
+  try {
+    const { fecha } = req.query;
+    const primerDiaMes = `${fecha}-01`;
+    const ultimoDiaMes = new Date(Number(fecha?.toString().split('-')[0]), Number(fecha?.toString().split('-')[1]), 0).toISOString().split('T')[0];
+
+    // Obtener estadísticas mensuales
+    const [stats]: any = await query(`
+      SELECT 
+        COUNT(*) as total_reservas,
+        SUM(precio_total) as ingresos_totales,
+        (
+          SELECT i.nombre
+          FROM reservas r2
+          JOIN instalaciones i ON r2.instalacion_id = i.id
+          WHERE DATE(r2.hora_inicio) BETWEEN ? AND ?
+          GROUP BY r2.instalacion_id
+          ORDER BY COUNT(*) DESC
+          LIMIT 1
+        ) as instalacion_mas_reservada,
+        ROUND(
+          (
+            SELECT COUNT(*) * 100.0 / (
+              SELECT COUNT(*)
+              FROM horarios_instalaciones hi
+              CROSS JOIN (
+                SELECT DISTINCT DATE(hora_inicio) as fecha
+                FROM reservas
+                WHERE DATE(hora_inicio) BETWEEN ? AND ?
+              ) d
+            )
+            FROM reservas
+            WHERE estado = 'confirmada'
+            AND DATE(hora_inicio) BETWEEN ? AND ?
+          )
+        ) as porcentaje_ocupacion
+      FROM reservas
+      WHERE estado = 'confirmada'
+      AND DATE(hora_inicio) BETWEEN ? AND ?
+    `, [primerDiaMes, ultimoDiaMes, primerDiaMes, ultimoDiaMes, primerDiaMes, ultimoDiaMes, primerDiaMes, ultimoDiaMes]);
+
+    res.json({
+      success: true,
+      data: {
+        mes: fecha,
+        total_reservas: stats.total_reservas || 0,
+        ingresos_totales: stats.ingresos_totales || 0,
+        instalacion_mas_reservada: stats.instalacion_mas_reservada || 'Sin reservas',
+        porcentaje_ocupacion: stats.porcentaje_ocupacion || 0
+      }
+    });
+  } catch (error: any) {
+    console.error('Error al obtener reporte mensual:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/reportes/instalaciones', async (req, res) => {
+  try {
+    const { fecha } = req.query;
+    const primerDiaMes = `${fecha}-01`;
+    const ultimoDiaMes = new Date(Number(fecha?.toString().split('-')[0]), Number(fecha?.toString().split('-')[1]), 0).toISOString().split('T')[0];
+
+    const reportes = await query(`
+      SELECT 
+        i.nombre as instalacion,
+        COUNT(r.id) as total_reservas,
+        COALESCE(SUM(r.precio_total), 0) as ingresos,
+        COALESCE(SUM(TIMESTAMPDIFF(HOUR, r.hora_inicio, r.hora_fin)), 0) as horas_ocupadas,
+        ROUND(
+          COUNT(r.id) * 100.0 / (
+            SELECT COUNT(*)
+            FROM horarios_instalaciones hi
+            WHERE hi.instalacion_id = i.id
+          )
+        ) as porcentaje_ocupacion
+      FROM instalaciones i
+      LEFT JOIN reservas r ON i.id = r.instalacion_id
+        AND r.estado = 'confirmada'
+        AND DATE(r.hora_inicio) BETWEEN ? AND ?
+      GROUP BY i.id, i.nombre
+      ORDER BY total_reservas DESC
+    `, [primerDiaMes, ultimoDiaMes]);
+
+    res.json({ success: true, data: reportes });
+  } catch (error: any) {
+    console.error('Error al obtener reporte por instalación:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Ruta para obtener disponibilidad
 app.get('/api/disponibilidad', async (req, res) => {
   try {
@@ -186,6 +353,77 @@ app.get('/api/disponibilidad', async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+// Ruta para obtener estadísticas del dashboard
+app.get('/api/dashboard/stats', async (req, res) => {
+  try {
+    // Obtener mes actual y mes anterior
+    const hoy = new Date();
+    const mesActual = hoy.toISOString().slice(0, 7);
+    const mesAnterior = new Date(hoy.getFullYear(), hoy.getMonth() - 1).toISOString().slice(0, 7);
+
+    // Estadísticas del mes actual
+    const [statsActual]: any = await query(`
+      SELECT 
+        COUNT(DISTINCT r.id) as total_reservas,
+        COUNT(DISTINCT CASE 
+          WHEN r.hora_inicio >= DATE_SUB(NOW(), INTERVAL 30 DAY) THEN u.id 
+          END) as usuarios_activos,
+        COALESCE(SUM(r.precio_total), 0) as ingresos_mensuales
+      FROM usuarios u
+      LEFT JOIN reservas r ON u.id = r.usuario_id 
+        AND DATE_FORMAT(r.hora_inicio, '%Y-%m') = ?
+      WHERE u.role = 'user'
+    `, [mesActual]);
+
+    // Estadísticas del mes anterior
+    const [statsAnterior]: any = await query(`
+      SELECT 
+        COUNT(DISTINCT r.id) as total_reservas,
+        COUNT(DISTINCT CASE 
+          WHEN r.hora_inicio >= DATE_SUB(DATE_SUB(NOW(), INTERVAL 1 MONTH), INTERVAL 30 DAY)
+          AND r.hora_inicio < DATE_SUB(NOW(), INTERVAL 1 MONTH)
+          THEN u.id 
+          END) as usuarios_activos,
+        COALESCE(SUM(r.precio_total), 0) as ingresos_mensuales
+      FROM usuarios u
+      LEFT JOIN reservas r ON u.id = r.usuario_id 
+        AND DATE_FORMAT(r.hora_inicio, '%Y-%m') = ?
+      WHERE u.role = 'user'
+    `, [mesAnterior]);
+
+    // Calcular cambios porcentuales
+    const calcularCambio = (actual: number, anterior: number) => {
+      if (anterior === 0) return '+100%';
+      const cambio = ((actual - anterior) / anterior) * 100;
+      return `${cambio >= 0 ? '+' : ''}${cambio.toFixed(1)}%`;
+    };
+
+    const stats = {
+      total_reservas: statsActual.total_reservas || 0,
+      usuarios_activos: statsActual.usuarios_activos || 0,
+      ingresos_mensuales: statsActual.ingresos_mensuales || 0,
+      cambio_reservas: calcularCambio(
+        statsActual.total_reservas || 0,
+        statsAnterior.total_reservas || 0
+      ),
+      cambio_usuarios: calcularCambio(
+        statsActual.usuarios_activos || 0,
+        statsAnterior.usuarios_activos || 0
+      ),
+      cambio_ingresos: calcularCambio(
+        statsActual.ingresos_mensuales || 0,
+        statsAnterior.ingresos_mensuales || 0
+      )
+    };
+
+    res.json({ success: true, data: stats });
+  } catch (error: any) {
+    console.error('Error al obtener estadísticas del dashboard:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

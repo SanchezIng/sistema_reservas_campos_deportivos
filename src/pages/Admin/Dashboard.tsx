@@ -1,30 +1,30 @@
-
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BarChart3, Users, Calendar, Settings, ClipboardList } from 'lucide-react';
+import { getDashboardStats, type DashboardStats } from '../../lib/services/dashboard';
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const stats = [
-    {
-      title: 'Reservas Totales',
-      value: '156',
-      change: '+12%',
-      icon: Calendar
-    },
-    {
-      title: 'Usuarios Activos',
-      value: '2,345',
-      change: '+3.2%',
-      icon: Users
-    },
-    {
-      title: 'Ingresos Mensuales',
-      value: 'S/ 12,456',
-      change: '+8.1%',
-      icon: BarChart3
-    }
-  ];
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        setLoading(true);
+        const data = await getDashboardStats();
+        setStats(data);
+      } catch (err) {
+        console.error('Error al cargar estadísticas:', err);
+        setError('Error al cargar las estadísticas del dashboard');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchStats();
+  }, []);
 
   const menuItems = [
     {
@@ -49,13 +49,52 @@ export default function AdminDashboard() {
     }
   ];
 
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6 max-w-7xl mx-auto">
+        <div className="bg-red-50 border-l-4 border-red-500 p-4">
+          <p className="text-red-700">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const statCards = [
+    {
+      title: 'Reservas Totales',
+      value: stats?.total_reservas.toString() || '0',
+      change: stats?.cambio_reservas || '+0%',
+      icon: Calendar
+    },
+    {
+      title: 'Usuarios Activos',
+      value: stats?.usuarios_activos.toString() || '0',
+      change: stats?.cambio_usuarios || '+0%',
+      icon: Users
+    },
+    {
+      title: 'Ingresos Mensuales',
+      value: `S/ ${stats?.ingresos_mensuales.toLocaleString() || '0'}`,
+      change: stats?.cambio_ingresos || '+0%',
+      icon: BarChart3
+    }
+  ];
+
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <h1 className="text-3xl font-bold mb-8">Panel de Administración</h1>
 
       {/* Estadísticas */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        {stats.map((stat, index) => {
+        {statCards.map((stat, index) => {
           const Icon = stat.icon;
           return (
             <div key={index} className="bg-white p-6 rounded-lg shadow-md">

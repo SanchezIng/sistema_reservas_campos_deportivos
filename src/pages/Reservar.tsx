@@ -161,6 +161,7 @@ export default function Reservar() {
     hoy.setHours(0, 0, 0, 0);
 
     if (fechaSeleccionada < hoy) {
+      console.log(fechaSeleccionada, hoy);
       return 'No puedes seleccionar una fecha pasada';
     }
     
@@ -174,91 +175,72 @@ export default function Reservar() {
     return null;
   };
 
+
+
   const validarHorario = () => {
     if (!formData.horaInicio || !formData.horaFin) return null;
   
     const horaActual = new Date();
     const fechaReserva = new Date(formData.fecha);
     
-    // Crear objetos Date para las horas de inicio y fin
-    const baseDate = new Date(fechaReserva);
-    baseDate.setHours(0, 0, 0, 0);
+    // Crear objetos Date completos para las horas de inicio y fin
+    const fechaHoraInicio = new Date(`${formData.fecha}T${formData.horaInicio}:00`);
+    const fechaHoraFin = new Date(`${formData.fecha}T${formData.horaFin}:00`);
     
-    const horaInicio = parse(formData.horaInicio, 'HH:mm', baseDate);
-    const horaFin = parse(formData.horaFin, 'HH:mm', baseDate);
+    // 1. Validación para fecha actual
+    const esFechaActual = format(fechaReserva, 'yyyy-MM-dd') === format(horaActual, 'yyyy-MM-dd');
     
-    // Validar que la hora de fin sea posterior a la hora de inicio
-    if (horaFin <= horaInicio) {
+    if (esFechaActual) {
+      // La hora de inicio no puede ser menor a la hora actual
+      if (fechaHoraInicio < horaActual) {
+        return 'La hora de inicio no puede ser menor a la hora actual';
+      }
+    }
+  
+    // 2. Validación de hora fin mayor que hora inicio
+    if (fechaHoraFin <= fechaHoraInicio) {
       return 'La hora de fin debe ser posterior a la hora de inicio';
     }
-    
-    // Obtener el horario de atención para el día seleccionado
+  
+    // 3. Validaciones del horario de atención
     const horarioAtencion = getHorarioAtencion(fechaReserva);
-    const horaApertura = parse(horarioAtencion.apertura, 'HH:mm', baseDate);
-    const horaCierre = parse(horarioAtencion.cierre, 'HH:mm', baseDate);
-  
-    // Validar horario de atención
-    if (horaInicio < horaApertura || horaInicio > horaCierre) {
-      return `El horario de inicio debe estar dentro del horario de atención (${horarioAtencion.apertura} - ${horarioAtencion.cierre})`;
-    }
     
-    if (horaFin < horaApertura || horaFin > horaCierre) {
-      return `El horario de fin debe estar dentro del horario de atención (${horarioAtencion.apertura} - ${horarioAtencion.cierre})`;
+    // Convertir las horas de atención a objetos Date para comparación
+    const fechaHoraApertura = new Date(`${formData.fecha}T${horarioAtencion.apertura}:00`);
+    const fechaHoraCierre = new Date(`${formData.fecha}T${horarioAtencion.cierre}:00`);
+  
+    // Validar que las horas estén dentro del horario de atención
+    if (fechaHoraInicio < fechaHoraApertura || fechaHoraFin > fechaHoraCierre || fechaHoraInicio > fechaHoraCierre || fechaHoraFin < fechaHoraApertura) {
+      return `El horario debe estar dentro del horario de atención (${horarioAtencion.apertura} - ${horarioAtencion.cierre})`;
     }
   
-    // Validar reglas especiales solo si es el mismo día
-    const esHoyMismo = format(fechaReserva, 'yyyy-MM-dd') === format(horaActual, 'yyyy-MM-dd');
-    
-    if (esHoyMismo) {
-      const horaActualAjustada = new Date(baseDate);
-      horaActualAjustada.setHours(
-        horaActual.getHours(),
-        horaActual.getMinutes(),
-        0,
-        0
-      );
-  
-      // Validar que la hora de inicio sea al menos 30 minutos después de la hora actual
-      if (horaInicio < addMinutes(horaActualAjustada, 30)) {
-        return 'La hora de inicio debe ser al menos 30 minutos después de la hora actual';
-      }
-  
-      // Validar que haya suficiente tiempo antes del cierre
-      const minutosHastaCierre = (horaCierre.getTime() - horaActualAjustada.getTime()) / (1000 * 60);
-      if (minutosHastaCierre < 20) {
-        return 'No se pueden realizar reservas cuando faltan menos de 20 minutos para el cierre';
-      }
-    }
-  
-    // Validar duración mínima de la reserva
-    const duracionMinutos = (horaFin.getTime() - horaInicio.getTime()) / (1000 * 60);
+    // Validar duración mínima de la reserva (30 minutos)
+    const duracionMinutos = (fechaHoraFin.getTime() - fechaHoraInicio.getTime()) / (1000 * 60);
     if (duracionMinutos < 30) {
       return 'La reserva debe ser de al menos 30 minutos';
     }
   
-    // Verificar si hay solapamiento con otras reservas existentes
-    const horaInicioReserva = new Date(`${formData.fecha}T${formData.horaInicio}`);
-    const horaFinReserva = new Date(`${formData.fecha}T${formData.horaFin}`);
-  
+    // Verificar solapamiento con otras reservas
     const hayConflicto = reservasExistentes.some(reserva => {
       const inicioExistente = new Date(reserva.hora_inicio);
       const finExistente = new Date(reserva.hora_fin);
   
       return (
-        (horaInicioReserva >= inicioExistente && horaInicioReserva < finExistente) ||
-        (horaFinReserva > inicioExistente && horaFinReserva <= finExistente) ||
-        (horaInicioReserva <= inicioExistente && horaFinReserva >= finExistente)
+        (fechaHoraInicio >= inicioExistente && fechaHoraInicio < finExistente) ||
+        (fechaHoraFin > inicioExistente && fechaHoraFin <= finExistente) ||
+        (fechaHoraInicio <= inicioExistente && fechaHoraFin >= finExistente)
       );
     });
   
     if (hayConflicto) {
-      return 'Este horario ya está reservado';
+      return 'Existe un reserva dentro de este  horario ';
     }
   
     return null;
   };
 
-  
+
+
 
   const handleFechaChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
