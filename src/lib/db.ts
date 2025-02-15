@@ -37,6 +37,8 @@ const pool = mysql.createPool({
     rejectUnauthorized: true
   }
 });
+
+
 // Función para probar la conexión
 export async function testConnection() {
   try {
