@@ -16,7 +16,7 @@ const app = express();
 
 // Middleware
 app.use(cors({
-  origin: 'https://sistema-reservas-campos-deportivos.vercel.app/',
+  origin: 'https://sistema-reservas-campos-deportivos.vercel.app',
   credentials: true
 }));
 app.use(bodyParser.json());
