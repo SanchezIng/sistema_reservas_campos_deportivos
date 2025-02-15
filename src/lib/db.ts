@@ -32,9 +32,11 @@ const pool = mysql.createPool({
   database: process.env.MYSQL_DATABASE,
   waitForConnections: true,
   connectionLimit: 10,
-  queueLimit: 0
+  queueLimit: 0,
+  ssl: {
+    rejectUnauthorized: true
+  }
 });
-
 // Función para probar la conexión
 export async function testConnection() {
   try {
