@@ -68,6 +68,46 @@ app.get('/api/usuarios', async (req, res) => {
   }
 });
 
+app.put('/api/usuarios/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { email, nombre_completo, telefono, role } = req.body;
+    
+    // Verificar si el email ya existe (excluyendo el usuario actual)
+    const [existingUsers]: any = await query(
+      'SELECT id FROM usuarios WHERE email = ? AND id != ?',
+      [email, id]
+    );
+
+    if (existingUsers && existingUsers.length > 0) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'El correo electrónico ya está registrado' 
+      });
+    }
+
+    await query(
+      `UPDATE usuarios 
+       SET email = ?, 
+           nombre_completo = ?, 
+           telefono = ?,
+           role = ?
+       WHERE id = ?`,
+      [email, nombre_completo, telefono, role, id]
+    );
+
+    const [updatedUser] = await query(
+      'SELECT id, email, nombre_completo, telefono, role, created_at FROM usuarios WHERE id = ?',
+      [id]
+    );
+
+    res.json({ success: true, data: updatedUser });
+  } catch (error: any) {
+    console.error('Error al actualizar usuario:', error);
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
 app.put('/api/usuarios/:id/role', async (req, res) => {
   try {
     const { id } = req.params;
@@ -199,10 +239,20 @@ app.get('/api/reservas/admin', async (req, res) => {
   }
 });
 
+
+
 app.post('/api/reservas', async (req, res) => {
   try {
-    const { instalacion_id, usuario_id, hora_inicio, hora_fin, estado, precio_total } = req.body;
+    const { instalacion_id, usuario_id, hora_inicio, hora_fin, estado } = req.body;
     
+    // Validar que todos los campos requeridos estén presentes
+    if (!instalacion_id || !usuario_id || !hora_inicio || !hora_fin || !estado) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Todos los campos son requeridos: instalacion_id, usuario_id, hora_inicio, hora_fin, estado' 
+      });
+    }
+
     // Verificar si ya existe una reserva para ese horario
     const reservasExistentes = await query(
       `SELECT * FROM reservas 
@@ -223,6 +273,25 @@ app.post('/api/reservas', async (req, res) => {
       });
     }
 
+    // Obtener el precio por hora de la instalación
+    const [instalacion]: any = await query(
+      'SELECT precio_por_hora FROM instalaciones WHERE id = ?',
+      [instalacion_id]
+    );
+
+    if (!instalacion) {
+      return res.status(400).json({
+        success: false,
+        error: 'Instalación no encontrada'
+      });
+    }
+
+    // Calcular el precio total
+    const horaInicio = new Date(hora_inicio);
+    const horaFin = new Date(hora_fin);
+    const horas = (horaFin.getTime() - horaInicio.getTime()) / (1000 * 60 * 60);
+    const precio_total = Math.round(horas * instalacion.precio_por_hora * 100) / 100;
+
     // Crear la reserva
     const result = await query(
       `INSERT INTO reservas (
@@ -232,13 +301,118 @@ app.post('/api/reservas', async (req, res) => {
       [instalacion_id, usuario_id, hora_inicio, hora_fin, estado, precio_total]
     );
 
+    // Obtener la reserva creada
+    const [reservaCreada] = await query(
+      `SELECT r.*, 
+              i.nombre as instalacion_nombre,
+              u.nombre_completo as usuario_nombre
+       FROM reservas r
+       JOIN instalaciones i ON r.instalacion_id = i.id
+       JOIN usuarios u ON r.usuario_id = u.id
+       WHERE r.id = LAST_INSERT_ID()`,
+    );
+
     res.json({ 
       success: true, 
       message: 'Reserva creada exitosamente',
-      data: result
+      data: reservaCreada
     });
   } catch (error: any) {
     console.error('Error al crear reserva:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Nuevo endpoint para actualizar reservas
+app.put('/api/reservas/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { instalacion_id, usuario_id, hora_inicio, hora_fin, estado } = req.body;
+
+    // Verificar si ya existe una reserva para ese horario (excluyendo la reserva actual)
+    const reservasExistentes = await query(
+      `SELECT * FROM reservas 
+       WHERE instalacion_id = ? 
+       AND id != ?
+       AND estado = 'confirmada'
+       AND (
+         (hora_inicio BETWEEN ? AND ?) OR
+         (hora_fin BETWEEN ? AND ?) OR
+         (hora_inicio <= ? AND hora_fin >= ?)
+       )`,
+      [instalacion_id, id, hora_inicio, hora_fin, hora_inicio, hora_fin, hora_inicio, hora_fin]
+    );
+
+    if (Array.isArray(reservasExistentes) && reservasExistentes.length > 0) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Ya existe una reserva para este horario' 
+      });
+    }
+
+    // Calcular precio total
+    const [instalacion]: any = await query(
+      'SELECT precio_por_hora FROM instalaciones WHERE id = ?',
+      [instalacion_id]
+    );
+
+    const horaInicio = new Date(hora_inicio);
+    const horaFin = new Date(hora_fin);
+    const horas = (horaFin.getTime() - horaInicio.getTime()) / (1000 * 60 * 60);
+    const precio_total = Math.round(horas * instalacion.precio_por_hora * 100) / 100;
+
+    // Actualizar la reserva
+    await query(
+      `UPDATE reservas 
+       SET instalacion_id = ?,
+           usuario_id = ?,
+           hora_inicio = ?,
+           hora_fin = ?,
+           estado = ?,
+           precio_total = ?
+       WHERE id = ?`,
+      [instalacion_id, usuario_id, hora_inicio, hora_fin, estado, precio_total, id]
+    );
+
+    // Obtener la reserva actualizada
+    const [reservaActualizada] = await query(
+      `SELECT r.*, 
+              i.nombre as instalacion_nombre,
+              u.nombre_completo as usuario_nombre
+       FROM reservas r
+       JOIN instalaciones i ON r.instalacion_id = i.id
+       JOIN usuarios u ON r.usuario_id = u.id
+       WHERE r.id = ?`,
+      [id]
+    );
+
+    res.json({ success: true, data: reservaActualizada });
+  } catch (error: any) {
+    console.error('Error al actualizar reserva:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.put('/api/reservas/:id/estado', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { estado } = req.body;
+
+    if (!['pendiente', 'confirmada', 'cancelada'].includes(estado)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Estado inválido'
+      });
+    }
+
+    await query(
+      'UPDATE reservas SET estado = ? WHERE id = ?',
+      [estado, id]
+    );
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Error al actualizar estado de reserva:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -423,6 +597,9 @@ app.get('/api/dashboard/stats', async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+
+
 
 
 const PORT = process.env.PORT || 3000;

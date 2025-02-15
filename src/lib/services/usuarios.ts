@@ -45,6 +45,28 @@ export async function actualizarRolUsuario(id: string, role: 'admin' | 'user'): 
   }
 }
 
+export async function actualizarUsuario(id: string, data: Partial<Usuario>): Promise<Usuario> {
+  try {
+    const response = await fetch(`${config.apiUrl}/api/usuarios/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
+    });
+    
+    if (!response.ok) {
+      throw new Error('Error al actualizar usuario');
+    }
+    
+    const responseData = await response.json();
+    return responseData.data;
+  } catch (error) {
+    console.error('Error al actualizar usuario:', error);
+    throw error;
+  }
+}
+
 export async function eliminarUsuario(id: string): Promise<boolean> {
   try {
     const response = await fetch(`${config.apiUrl}/api/usuarios/${id}`, {
