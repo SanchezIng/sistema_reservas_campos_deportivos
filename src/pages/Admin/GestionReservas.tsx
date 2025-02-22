@@ -1,19 +1,21 @@
 import { useState, useEffect } from 'react';
-import { Calendar, Clock, User, CheckCircle, XCircle, AlertCircle, Filter, X, Search, Edit2, Plus } from 'lucide-react';
-import { format, parseISO } from 'date-fns';
+import { Calendar as CalendarIcon, Clock, Search, AlertCircle, X, Edit2, Plus, Filter, CheckCircle, XCircle } from 'lucide-react';
+import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { config } from '../../config/env';
 
-interface Reserva {
+interface TimeSlot {
+  hora: string;
+  disponible: boolean;
+}
+
+interface Instalacion {
   id: string;
-  instalacion_id: string;
-  instalacion_nombre: string;
-  usuario_id: string;
-  usuario_nombre: string;
-  hora_inicio: string;
-  hora_fin: string;
-  estado: 'pendiente' | 'confirmada' | 'cancelada';
-  precio_total: number;
+  nombre: string;
+  tipo: string;
+  hora_apertura: string;
+  hora_cierre: string;
+  slots: TimeSlot[];
 }
 
 interface FormData {
@@ -35,11 +37,9 @@ const initialFormData: FormData = {
 };
 
 export default function GestionReservas() {
-  const [reservas, setReservas] = useState<Reserva[]>([]);
+  const [reservas, setReservas] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filtroFecha, setFiltroFecha] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [filtroEstado, setFiltroEstado] = useState('todos');
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState<FormData>(initialFormData);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -47,18 +47,39 @@ export default function GestionReservas() {
   const [usuarios, setUsuarios] = useState<any[]>([]);
   const [busqueda, setBusqueda] = useState('');
 
+  // Estados para el filtrado
+  const [filtroEstado, setFiltroEstado] = useState('todos');
+  const [tipoFiltroFecha, setTipoFiltroFecha] = useState('dia');
+  const [filtroFecha, setFiltroFecha] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [filtroMes, setFiltroMes] = useState(format(new Date(), 'yyyy-MM'));
+  const [filtroAño, setFiltroAño] = useState(new Date().getFullYear().toString());
+  const [fechaInicio, setFechaInicio] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [fechaFin, setFechaFin] = useState(format(new Date(), 'yyyy-MM-dd'));
+
   useEffect(() => {
     fetchReservas();
     fetchInstalaciones();
     fetchUsuarios();
-  }, [filtroFecha, filtroEstado]);
+  }, [filtroEstado, tipoFiltroFecha, filtroFecha, filtroMes, filtroAño, fechaInicio, fechaFin]);
 
   const fetchReservas = async () => {
     try {
       setLoading(true);
-      let url = `${config.apiUrl}/api/reservas/admin?fecha=${filtroFecha}`;
-      if (filtroEstado !== 'todos') {
-        url += `&estado=${filtroEstado}`;
+      let url = `${config.apiUrl}/api/reservas/admin?estado=${filtroEstado}`;
+
+      switch (tipoFiltroFecha) {
+        case 'dia':
+          url += `&fecha=${filtroFecha}`;
+          break;
+        case 'mes':
+          url += `&mes=${filtroMes}`;
+          break;
+        case 'año':
+          url += `&año=${filtroAño}`;
+          break;
+        case 'intervalo':
+          url += `&fechaInicio=${fechaInicio}&fechaFin=${fechaFin}`;
+          break;
       }
 
       const response = await fetch(url);
@@ -109,7 +130,7 @@ export default function GestionReservas() {
 
       setReservas(prev =>
         prev.map(reserva =>
-          reserva.id === id ? { ...reserva, estado: nuevoEstado as any } : reserva
+          reserva.id === id ? { ...reserva, estado: nuevoEstado } : reserva
         )
       );
     } catch (err) {
@@ -118,42 +139,21 @@ export default function GestionReservas() {
     }
   };
 
-  const validateForm = () => {
-    if (!formData.instalacion_id) {
-      setError('Por favor, seleccione una instalación');
-      return false;
-    }
-    if (!formData.usuario_id) {
-      setError('Por favor, seleccione un usuario');
-      return false;
-    }
-    if (!formData.fecha) {
-      setError('Por favor, seleccione una fecha');
-      return false;
-    }
-    if (!formData.hora_inicio) {
-      setError('Por favor, seleccione una hora de inicio');
-      return false;
-    }
-    if (!formData.hora_fin) {
-      setError('Por favor, seleccione una hora de fin');
-      return false;
-    }
-    if (!formData.estado) {
-      setError('Por favor, seleccione un estado');
-      return false;
-    }
-    return true;
+  const handleEdit = (reserva: any) => {
+    setFormData({
+      instalacion_id: reserva.instalacion_id,
+      usuario_id: reserva.usuario_id,
+      fecha: format(new Date(reserva.hora_inicio), 'yyyy-MM-dd'),
+      hora_inicio: format(new Date(reserva.hora_inicio), 'HH:mm'),
+      hora_fin: format(new Date(reserva.hora_fin), 'HH:mm'),
+      estado: reserva.estado
+    });
+    setEditingId(reserva.id);
+    setShowForm(true);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-
-    if (!validateForm()) {
-      return;
-    }
-
     try {
       const reservaData = {
         instalacion_id: formData.instalacion_id,
@@ -190,22 +190,6 @@ export default function GestionReservas() {
     }
   };
 
-  const handleEdit = (reserva: Reserva) => {
-    const fechaInicio = parseISO(reserva.hora_inicio);
-    const fechaFin = parseISO(reserva.hora_fin);
-
-    setFormData({
-      instalacion_id: reserva.instalacion_id,
-      usuario_id: reserva.usuario_id,
-      fecha: format(fechaInicio, 'yyyy-MM-dd'),
-      hora_inicio: format(fechaInicio, 'HH:mm'),
-      hora_fin: format(fechaFin, 'HH:mm'),
-      estado: reserva.estado
-    });
-    setEditingId(reserva.id);
-    setShowForm(true);
-  };
-
   const reservasFiltradas = reservas.filter(reserva =>
     reserva.instalacion_nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
     reserva.usuario_nombre.toLowerCase().includes(busqueda.toLowerCase())
@@ -237,16 +221,7 @@ export default function GestionReservas() {
       )}
 
       <div className="mb-6 flex flex-wrap gap-4">
-        <div className="flex items-center space-x-2">
-          <Calendar className="h-5 w-5 text-gray-500" />
-          <input
-            type="date"
-            value={filtroFecha}
-            onChange={(e) => setFiltroFecha(e.target.value)}
-            className="border rounded-lg px-3 py-2"
-          />
-        </div>
-
+        {/* Filtro de Estado */}
         <div className="flex items-center space-x-2">
           <Filter className="h-5 w-5 text-gray-500" />
           <select
@@ -261,6 +236,71 @@ export default function GestionReservas() {
           </select>
         </div>
 
+        {/* Tipo de Filtro de Fecha */}
+        <div className="flex items-center space-x-2">
+          <CalendarIcon className="h-5 w-5 text-gray-500" />
+          <select
+            value={tipoFiltroFecha}
+            onChange={(e) => setTipoFiltroFecha(e.target.value)}
+            className="border rounded-lg px-3 py-2"
+          >
+            <option value="dia">Por Día</option>
+            <option value="mes">Por Mes</option>
+            <option value="año">Por Año</option>
+            <option value="intervalo">Por Intervalo</option>
+          </select>
+        </div>
+
+        {/* Filtros de Fecha Dinámicos */}
+        {tipoFiltroFecha === 'dia' && (
+          <input
+            type="date"
+            value={filtroFecha}
+            onChange={(e) => setFiltroFecha(e.target.value)}
+            className="border rounded-lg px-3 py-2"
+          />
+        )}
+
+        {tipoFiltroFecha === 'mes' && (
+          <input
+            type="month"
+            value={filtroMes}
+            onChange={(e) => setFiltroMes(e.target.value)}
+            className="border rounded-lg px-3 py-2"
+          />
+        )}
+
+        {tipoFiltroFecha === 'año' && (
+          <select
+            value={filtroAño}
+            onChange={(e) => setFiltroAño(e.target.value)}
+            className="border rounded-lg px-3 py-2"
+          >
+            {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i).map(year => (
+              <option key={year} value={year}>{year}</option>
+            ))}
+          </select>
+        )}
+
+        {tipoFiltroFecha === 'intervalo' && (
+          <div className="flex items-center space-x-2">
+            <input
+              type="date"
+              value={fechaInicio}
+              onChange={(e) => setFechaInicio(e.target.value)}
+              className="border rounded-lg px-3 py-2"
+            />
+            <span>hasta</span>
+            <input
+              type="date"
+              value={fechaFin}
+              onChange={(e) => setFechaFin(e.target.value)}
+              className="border rounded-lg px-3 py-2"
+            />
+          </div>
+        )}
+
+        {/* Búsqueda */}
         <div className="flex-grow">
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -276,6 +316,7 @@ export default function GestionReservas() {
           </div>
         </div>
 
+        {/* Botón Nueva Reserva */}
         <button
           onClick={() => {
             setFormData(initialFormData);
@@ -289,6 +330,7 @@ export default function GestionReservas() {
         </button>
       </div>
 
+      {/* Modal de Formulario */}
       {showForm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
@@ -427,6 +469,7 @@ export default function GestionReservas() {
         </div>
       )}
 
+      {/* Tabla de Reservas */}
       <div className="bg-white rounded-lg shadow overflow-hidden">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">

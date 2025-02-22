@@ -11,6 +11,10 @@ import {
   deleteInstalacionFromDB
 } from './lib/db';
 import { query } from './lib/db';
+import { v4 as uuidv4 } from 'uuid';
+import bcrypt from 'bcryptjs';
+import nodemailer from 'nodemailer';
+import jwt from 'jsonwebtoken';
 
 const app = express();
 
@@ -20,6 +24,15 @@ app.use(cors({
   credentials: true
 }));
 app.use(bodyParser.json());
+
+// Configuración del transporte de correo
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASSWORD
+  }
+});
 
 // Probar conexión a la base de datos al iniciar
 testConnection().then((connected) => {
@@ -52,6 +65,139 @@ app.post('/api/auth/login', async (req, res) => {
   } catch (error: any) {
     console.error('Error en login:', error);
     res.status(401).json({ success: false, error: error.message });
+  }
+});
+
+
+// Nueva ruta para solicitar recuperación de contraseña
+app.post('/api/auth/recuperar-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    // Verificar si el usuario existe
+    const [user]: any = await query(
+      'SELECT id, email, nombre_completo FROM usuarios WHERE email = ?',
+      [email]
+    );
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'No existe una cuenta con este correo electrónico'
+      });
+    }
+
+    // Generar token de recuperación
+    const resetToken = jwt.sign(
+      { userId: user.id },
+      process.env.JWT_SECRET || 'tu_secreto_jwt',
+      { expiresIn: '1h' }
+    );
+
+    // Guardar token en la base de datos
+    await query(
+      'UPDATE usuarios SET reset_token = ?, reset_token_expires = DATE_ADD(NOW(), INTERVAL 1 HOUR) WHERE id = ?',
+      [resetToken, user.id]
+    );
+
+    // Enviar correo
+    const resetUrl = `${process.env.FRONTEND_URL}/restablecer-password?token=${resetToken}`;
+    
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: 'Recuperación de contraseña - DeporteYa',
+      html: `
+        <h1>Recuperación de contraseña</h1>
+        <p>Hola ${user.nombre_completo},</p>
+        <p>Has solicitado restablecer tu contraseña. Haz clic en el siguiente enlace para crear una nueva contraseña:</p>
+        <a href="${resetUrl}">Restablecer contraseña</a>
+        <p>Este enlace expirará en 1 hora.</p>
+        <p>Si no solicitaste restablecer tu contraseña, puedes ignorar este correo.</p>
+      `
+    };
+
+    await transporter.sendMail(mailOptions);
+
+    res.json({
+      success: true,
+      message: 'Se ha enviado un correo con las instrucciones para restablecer tu contraseña'
+    });
+  } catch (error: any) {
+    console.error('Error en recuperación de contraseña:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error al procesar la solicitud de recuperación de contraseña'
+    });
+  }
+});
+
+// Ruta para verificar token de reset
+app.post('/api/auth/verificar-token-reset', async (req, res) => {
+  try {
+    const { token } = req.body;
+
+    // Verificar si el token existe y no ha expirado
+    const [user]: any = await query(
+      'SELECT id FROM usuarios WHERE reset_token = ? AND reset_token_expires > NOW()',
+      [token]
+    );
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        error: 'Token no válido o expirado'
+      });
+    }
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Error al verificar token:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error al verificar el token'
+    });
+  }
+});
+
+// Ruta para restablecer contraseña
+app.post('/api/auth/restablecer-password', async (req, res) => {
+  try {
+    const { token, password } = req.body;
+
+    // Verificar token y obtener usuario
+    const [user]: any = await query(
+      'SELECT id FROM usuarios WHERE reset_token = ? AND reset_token_expires > NOW()',
+      [token]
+    );
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        error: 'Token no válido o expirado'
+      });
+    }
+
+    // Generar hash de la nueva contraseña
+    const salt = await bcrypt.genSalt(10);
+    const passwordHash = await bcrypt.hash(password, salt);
+
+    // Actualizar contraseña y limpiar token
+    await query(
+      'UPDATE usuarios SET password_hash = ?, reset_token = NULL, reset_token_expires = NULL WHERE id = ?',
+      [passwordHash, user.id]
+    );
+
+    res.json({
+      success: true,
+      message: 'Contraseña actualizada exitosamente'
+    });
+  } catch (error: any) {
+    console.error('Error al restablecer contraseña:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error al restablecer la contraseña'
+    });
   }
 });
 
@@ -288,7 +434,7 @@ app.get('/api/reservas', async (req, res) => {
 // Ruta para obtener reservas (admin)
 app.get('/api/reservas/admin', async (req, res) => {
   try {
-    const { fecha, estado } = req.query;
+    const { estado, mes, año, fecha, fechaInicio, fechaFin } = req.query;
     let sql = `
       SELECT r.*, 
              i.nombre as instalacion_nombre,
@@ -300,25 +446,39 @@ app.get('/api/reservas/admin', async (req, res) => {
     `;
     const params = [];
 
-    if (fecha) {
-      sql += ' AND DATE(r.hora_inicio) = DATE(?)';
-      params.push(fecha);
-    }
-
+    // Filtro por estado
     if (estado && estado !== 'todos') {
       sql += ' AND r.estado = ?';
       params.push(estado);
     }
 
+    // Filtros de fecha
+    if (mes) {
+      sql += ' AND DATE_FORMAT(r.hora_inicio, "%Y-%m") = ?';
+      params.push(mes);
+    } else if (año) {
+      sql += ' AND YEAR(r.hora_inicio) = ?';
+      params.push(año);
+    } else if (fecha) {
+      sql += ' AND DATE(r.hora_inicio) = ?';
+      params.push(fecha);
+    } else if (fechaInicio && fechaFin) {
+      sql += ' AND DATE(r.hora_inicio) BETWEEN ? AND ?';
+      params.push(fechaInicio, fechaFin);
+    }
+
     sql += ' ORDER BY r.hora_inicio DESC';
+
+    console.log('SQL Query:', sql); // Para debugging
+    console.log('Parameters:', params); // Para debugging
 
     const reservas = await query(sql, params);
     res.json({ success: true, data: reservas });
   } catch (error: any) {
+    console.error('Error al obtener reservas:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
-
 
 
 app.post('/api/reservas', async (req, res) => {
@@ -608,6 +768,7 @@ app.get('/api/disponibilidad', async (req, res) => {
   }
 });
 
+
 // Ruta para obtener estadísticas del dashboard
 app.get('/api/dashboard/stats', async (req, res) => {
   try {
@@ -677,10 +838,6 @@ app.get('/api/dashboard/stats', async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
-
-
-
-
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

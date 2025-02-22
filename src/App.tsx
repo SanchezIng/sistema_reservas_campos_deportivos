@@ -9,6 +9,8 @@ import DetalleInstalacion from './pages/DetalleInstalacion';
 import Reservar from './pages/Reservar';
 import Login from './pages/Login';
 import Registro from './pages/Registro';
+import RecuperarPassword from './pages/RecuperarPassword';
+import RestablecerPassword from './pages/RestablecerPassword';
 import Disponibilidad from './pages/Disponibilidad';
 import ProtectedAdminRoute from './components/ProtectedAdminRoute';
 
@@ -41,6 +43,8 @@ function App() {
                 <Route path="/reservar" element={<Reservar />} />
                 <Route path="/login" element={<Login />} />
                 <Route path="/registro" element={<Registro />} />
+                <Route path="/recuperar-password" element={<RecuperarPassword />} />
+                <Route path="/restablecer-password" element={<RestablecerPassword />} />
                 <Route path="/disponibilidad" element={<Disponibilidad />} />
                 
                 {/* Rutas protegidas de administrador */}
