@@ -64,7 +64,6 @@ export default function GestionInstalaciones() {
   }, []);
 
   useEffect(() => {
-    // Obtener información de mantenimiento para cada instalación
     instalaciones.forEach(instalacion => {
       fetchMaintenanceInfo(instalacion.id);
     });
@@ -140,11 +139,33 @@ export default function GestionInstalaciones() {
     }
   };
 
+  const validateMaintenanceForm = () => {
+    const horaInicio = new Date(maintenanceFormData.hora_inicio);
+    const horaFin = new Date(maintenanceFormData.hora_fin);
+    const ahora = new Date();
+
+    if (horaInicio < ahora) {
+      setError('La hora de inicio debe ser posterior a la hora actual');
+      return false;
+    }
+
+    if (horaFin <= horaInicio) {
+      setError('La hora de fin debe ser posterior a la hora de inicio');
+      return false;
+    }
+
+    return true;
+  };
+
   const handleMaintenanceSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedInstalacionId) return;
 
     try {
+      if (!validateMaintenanceForm()) {
+        return;
+      }
+
       const response = await fetch(`${config.apiUrl}/api/mantenimiento`, {
         method: 'POST',
         headers: {
@@ -166,6 +187,7 @@ export default function GestionInstalaciones() {
       setShowMaintenanceForm(false);
       setMaintenanceFormData(initialMaintenanceFormData);
       setSelectedInstalacionId(null);
+      setError(null);
     } catch (err: any) {
       console.error('Error al programar mantenimiento:', err);
       setError(err.message || 'Error al programar el mantenimiento. Por favor, intenta nuevamente.');
@@ -180,12 +202,10 @@ export default function GestionInstalaciones() {
 
       if (!response.ok) throw new Error('Error al finalizar mantenimiento');
 
-      // Actualiza el estado de la instalación a "disponible"
-      setInstalaciones(prev => prev.map(inst => 
-        inst.id === instalacionId ? { ...inst, estado: 'disponible' } : inst
-      ));
-
+      // Actualizar el estado local
+      await fetchInstalaciones();
       await fetchMaintenanceInfo(instalacionId);
+      setError(null);
     } catch (error) {
       console.error('Error:', error);
       setError('Error al finalizar el mantenimiento');
@@ -200,12 +220,25 @@ export default function GestionInstalaciones() {
     }
     setSelectedInstalacionId(instalacionId);
     setShowMaintenanceForm(true);
+    setError(null);
+
+    // Establecer valores por defecto para el formulario
+    const now = new Date();
+    const horaInicio = new Date(now.getTime() + 60 * 60 * 1000); // 1 hora después
+    const horaFin = new Date(now.getTime() + 4 * 60 * 60 * 1000); // 4 horas después
+
+    setMaintenanceFormData({
+      hora_inicio: horaInicio.toISOString().slice(0, 16),
+      hora_fin: horaFin.toISOString().slice(0, 16),
+      descripcion: ''
+    });
   };
 
   const handleCancel = () => {
     setShowForm(false);
     setFormData(initialFormData);
     setEditingId(null);
+    setError(null);
   };
 
   if (loading) {
@@ -370,6 +403,7 @@ export default function GestionInstalaciones() {
                 setShowMaintenanceForm(false);
                 setMaintenanceFormData(initialMaintenanceFormData);
                 setSelectedInstalacionId(null);
+                setError(null);
               }}>
                 <X className="h-6 w-6 text-gray-500 hover:text-gray-700" />
               </button>
@@ -386,6 +420,7 @@ export default function GestionInstalaciones() {
                   onChange={(e) => setMaintenanceFormData(prev => ({ ...prev, hora_inicio: e.target.value }))}
                   className="w-full border rounded-lg px-3 py-2"
                   required
+                  min={new Date().toISOString().slice(0, 16)}
                 />
               </div>
 
@@ -399,6 +434,7 @@ export default function GestionInstalaciones() {
                   onChange={(e) => setMaintenanceFormData(prev => ({ ...prev, hora_fin: e.target.value }))}
                   className="w-full border rounded-lg px-3 py-2"
                   required
+                  min={maintenanceFormData.hora_inicio}
                 />
               </div>
 
@@ -422,6 +458,7 @@ export default function GestionInstalaciones() {
                     setShowMaintenanceForm(false);
                     setMaintenanceFormData(initialMaintenanceFormData);
                     setSelectedInstalacionId(null);
+                    setError(null);
                   }}
                   className="px-4 py-2 text-gray-600 hover:text-gray-800"
                 >
@@ -475,7 +512,10 @@ export default function GestionInstalaciones() {
                     {maintenance ? (
                       <div className="flex flex-col">
                         <span className="text-sm font-medium">
-                          Hasta: {new Date(maintenance.hora_fin).toLocaleString()}
+                          Inicio: {new Date(maintenance.hora_inicio).toLocaleString()}
+                        </span>
+                        <span className="text-sm font-medium">
+                          Fin: {new Date(maintenance.hora_fin).toLocaleString()}
                         </span>
                         <span className="text-xs text-gray-500">{maintenance.descripcion}</span>
                         <button

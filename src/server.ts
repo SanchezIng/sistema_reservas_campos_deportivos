@@ -391,17 +391,48 @@ app.get('/api/mantenimiento/:instalacionId', async (req, res) => {
 app.put('/api/mantenimiento/:id/finalizar', async (req, res) => {
   try {
     const { id } = req.params;
+    const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+
+    // Actualizar la hora de fin al momento actual
     await query(
-      'UPDATE mantenimiento SET hora_fin = NOW() WHERE id = ?',
+      'UPDATE mantenimiento SET hora_fin = ? WHERE id = ?',
+      [now, id]
+    );
+
+    // Obtener la instalación asociada para verificar su estado
+    const [mantenimiento]: any = await query(
+      'SELECT instalacion_id FROM mantenimiento WHERE id = ?',
       [id]
     );
-    res.json({ success: true, message: 'Mantenimiento finalizado exitosamente' });
+
+    if (mantenimiento) {
+      // Verificar si hay más mantenimientos activos para esta instalación
+      const [mantenimientosActivos]: any = await query(
+        `SELECT COUNT(*) as count 
+         FROM mantenimiento 
+         WHERE instalacion_id = ? 
+         AND hora_fin > NOW()
+         AND id != ?`,
+        [mantenimiento.instalacion_id, id]
+      );
+
+      // Si no hay más mantenimientos activos, la instalación estará disponible
+      if (mantenimientosActivos.count === 0) {
+        // No necesitamos actualizar explícitamente el estado ya que se maneja a través de la vista
+        console.log('Instalación disponible para su uso');
+      }
+    }
+
+    res.json({ 
+      success: true, 
+      message: 'Mantenimiento finalizado exitosamente',
+      hora_fin: now
+    });
   } catch (error: any) {
     console.error('Error al finalizar mantenimiento:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
-
 
 // Rutas de reservas
 app.get('/api/reservas', async (req, res) => {
@@ -479,7 +510,6 @@ app.get('/api/reservas/admin', async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
-
 
 app.post('/api/reservas', async (req, res) => {
   try {

@@ -1,6 +1,3 @@
-
-/* Base de Datos modificada y mejorada*/
-
 -- 1. Crear la base de datos
 CREATE DATABASE IF NOT EXISTS db_reservas_deportivas;
 USE db_reservas_deportivas;
@@ -14,6 +11,8 @@ CREATE TABLE IF NOT EXISTS usuarios (
   telefono VARCHAR(20),
   password_hash VARCHAR(255) NOT NULL,
   role VARCHAR(10) DEFAULT 'user',
+  reset_token VARCHAR(255) NULL,
+  reset_token_expires TIMESTAMP NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
@@ -126,5 +125,3 @@ SELECT
 
 -- Ejemplo de uso de la vista
 SELECT * FROM v_estado_instalaciones;
-
-
