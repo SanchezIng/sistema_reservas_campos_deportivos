@@ -31,13 +31,12 @@ const pool = mysql.createPool({
   password: process.env.MYSQL_PASSWORD,
   database: process.env.MYSQL_DATABASE,
   waitForConnections: true,
-  connectionLimit: 10,
+  connectionLimit: 4, // Reducir el límite de conexiones
   queueLimit: 0,
   ssl: {
     rejectUnauthorized: false
   }
 });
-
 
 // Función para probar la conexión
 export async function testConnection() {
@@ -155,69 +154,94 @@ export async function deleteInstalacionFromDB(id: string) {
 
 // Función para obtener disponibilidad de instalaciones
 export async function getDisponibilidadInstalaciones(fecha: string) {
-  // Primero obtenemos las instalaciones con sus horarios
-  const sql = `
-    WITH horas AS (
-      SELECT TIME_FORMAT(MAKETIME(hora, 0, 0), '%H:00') as hora
-      FROM (
-        SELECT @row := @row + 1 as hora
-        FROM (SELECT 0 UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL
-              SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) t1,
-             (SELECT 0 UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL
-              SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) t2,
-        (SELECT @row := 5) t3
-        WHERE @row < 23
-      ) numeros
-    )
-    SELECT 
-      i.id,
-      i.nombre,
-      i.tipo,
-      hi.hora_apertura,
-      hi.hora_cierre,
-      h.hora,
-      CASE 
-        WHEN h.hora < TIME_FORMAT(hi.hora_apertura, '%H:00') OR h.hora >= TIME_FORMAT(hi.hora_cierre, '%H:00') THEN false
-        WHEN m.id IS NOT NULL THEN false
-        WHEN r.id IS NOT NULL AND r.estado = 'confirmada' THEN false
-        ELSE true
-      END as disponible
-    FROM instalaciones i
-    JOIN horarios_instalaciones hi ON i.id = hi.instalacion_id
-    CROSS JOIN horas h
-    LEFT JOIN mantenimiento m ON i.id = m.instalacion_id 
-      AND DATE(?) BETWEEN DATE(m.hora_inicio) AND DATE(m.hora_fin)
-      AND h.hora BETWEEN TIME_FORMAT(m.hora_inicio, '%H:00') AND TIME_FORMAT(m.hora_fin, '%H:00')
-    LEFT JOIN reservas r ON i.id = r.instalacion_id 
-      AND DATE(r.hora_inicio) = DATE(?)
-      AND h.hora BETWEEN TIME_FORMAT(r.hora_inicio, '%H:00') AND TIME_FORMAT(r.hora_fin, '%H:00')
-    WHERE hi.dia_semana = WEEKDAY(?)
-    ORDER BY i.nombre, h.hora`;
+  try {
+    // Obtener toda la información necesaria en una sola consulta
+    const sql = `
+      SELECT 
+        i.id,
+        i.nombre,
+        i.tipo,
+        hi.hora_apertura,
+        hi.hora_cierre,
+        GROUP_CONCAT(
+          DISTINCT CONCAT(
+            TIME_FORMAT(r.hora_inicio, '%H:%i'),
+            '-',
+            TIME_FORMAT(r.hora_fin, '%H:%i')
+          )
+        ) as reservas,
+        GROUP_CONCAT(
+          DISTINCT CONCAT(
+            TIME_FORMAT(m.hora_inicio, '%H:%i'),
+            '-',
+            TIME_FORMAT(m.hora_fin, '%H:%i')
+          )
+        ) as mantenimientos
+      FROM instalaciones i
+      JOIN horarios_instalaciones hi ON i.id = hi.instalacion_id
+      LEFT JOIN reservas r ON i.id = r.instalacion_id 
+        AND DATE(r.hora_inicio) = ?
+        AND r.estado = 'confirmada'
+      LEFT JOIN mantenimiento m ON i.id = m.instalacion_id 
+        AND DATE(m.hora_inicio) = ?
+      WHERE hi.dia_semana = WEEKDAY(?)
+      GROUP BY i.id, i.nombre, i.tipo, hi.hora_apertura, hi.hora_cierre
+    `;
 
-  const results = await query(sql, [fecha, fecha, fecha]);
+    const instalaciones = await query(sql, [fecha, fecha, fecha]);
 
-  // Transformar los resultados al formato esperado
-  const instalacionesMap = new Map();
+    return (instalaciones as any[]).map(instalacion => {
+      const slots = [];
+      let horaActual = new Date(`${fecha}T${instalacion.hora_apertura}`);
+      const horaCierre = new Date(`${fecha}T${instalacion.hora_cierre}`);
 
-  (results as any[]).forEach(row => {
-    if (!instalacionesMap.has(row.id)) {
-      instalacionesMap.set(row.id, {
-        id: row.id,
-        nombre: row.nombre,
-        tipo: row.tipo,
-        hora_apertura: row.hora_apertura,
-        hora_cierre: row.hora_cierre,
-        slots: []
-      });
-    }
+      // Convertir las reservas y mantenimientos a arrays de rangos
+      const reservas = instalacion.reservas ? 
+        instalacion.reservas.split(',').map((r: string) => {
+          const [inicio, fin] = r.split('-');
+          return { inicio, fin };
+        }) : [];
 
-    instalacionesMap.get(row.id).slots.push({
-      hora: row.hora,
-      disponible: row.disponible
+      const mantenimientos = instalacion.mantenimientos ?
+        instalacion.mantenimientos.split(',').map((m: string) => {
+          const [inicio, fin] = m.split('-');
+          return { inicio, fin };
+        }) : [];
+
+      // Generar slots
+      while (horaActual < horaCierre) {
+        const horaSlot = horaActual.toTimeString().slice(0, 5);
+        
+        // Verificar si el slot está disponible
+        const estaReservado = reservas.some(r => 
+          horaSlot >= r.inicio && horaSlot < r.fin
+        );
+        
+        const enMantenimiento = mantenimientos.some(m =>
+          horaSlot >= m.inicio && horaSlot < m.fin
+        );
+
+        slots.push({
+          hora: horaSlot,
+          disponible: !estaReservado && !enMantenimiento
+        });
+
+        horaActual.setHours(horaActual.getHours() + 1);
+      }
+
+      return {
+        id: instalacion.id,
+        nombre: instalacion.nombre,
+        tipo: instalacion.tipo,
+        hora_apertura: instalacion.hora_apertura,
+        hora_cierre: instalacion.hora_cierre,
+        slots
+      };
     });
-  });
-
-  return Array.from(instalacionesMap.values());
+  } catch (error) {
+    console.error('Error al obtener disponibilidad:', error);
+    throw error;
+  }
 }
 
 export default pool;
