@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Calendar, Search, ClipboardList } from 'lucide-react';
 
 const instalaciones = [
@@ -27,6 +27,12 @@ const instalaciones = [
 ];
 
 export default function Home() {
+  const navigate = useNavigate();
+
+  const handleVerMas = (tipo: string) => {
+    navigate(`/instalaciones?tipo=${tipo}`);
+  };
+
   return (
     <div className="flex flex-col min-h-screen">
       {/* Sección Hero */}
@@ -90,7 +96,7 @@ export default function Home() {
           <h2 className="text-3xl font-bold text-center mb-12">Nuestras Instalaciones</h2>
           <div className="grid md:grid-cols-3 gap-8">
             {instalaciones.map((instalacion) => (
-              <div key={instalacion.id} className="bg-white rounded-lg shadow-md overflow-hidden">
+              <div key={instalacion.id} className="bg-white rounded-lg shadow-md overflow-hidden transform transition-transform duration-300 hover:scale-105">
                 <img 
                   src={instalacion.imagen} 
                   alt={instalacion.nombre}
@@ -99,12 +105,13 @@ export default function Home() {
                 <div className="p-6">
                   <h3 className="text-xl font-semibold mb-2">{instalacion.nombre}</h3>
                   <p className="text-gray-600 mb-4">{instalacion.descripcion}</p>
-                  <Link
-                    to={`/instalaciones/${instalacion.id}`}
-                    className="text-blue-600 hover:text-blue-700 font-medium"
+                  <button
+                    onClick={() => handleVerMas(instalacion.tipo)}
+                    className="text-blue-600 hover:text-blue-700 font-medium flex items-center group"
                   >
-                    Ver Más →
-                  </Link>
+                    Ver Más 
+                    <span className="transform transition-transform duration-300 group-hover:translate-x-2">→</span>
+                  </button>
                 </div>
               </div>
             ))}

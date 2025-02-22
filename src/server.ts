@@ -55,6 +55,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+
 // Rutas de usuarios
 app.get('/api/usuarios', async (req, res) => {
   try {
@@ -176,6 +177,85 @@ app.delete('/api/instalaciones/:id', async (req, res) => {
     res.status(400).json({ success: false, error: error.message });
   }
 });
+
+// Ruta para mantenimiento instalaciones
+app.post('/api/mantenimiento', async (req, res) => {
+  try {
+    const { instalacion_id, hora_inicio, hora_fin, descripcion } = req.body;
+
+    // Validar que no haya reservas en ese horario
+    const reservasExistentes = await query(
+      `SELECT * FROM reservas 
+       WHERE instalacion_id = ? 
+       AND estado = 'confirmada'
+       AND (
+         (hora_inicio BETWEEN ? AND ?) OR
+         (hora_fin BETWEEN ? AND ?) OR
+         (hora_inicio <= ? AND hora_fin >= ?)
+       )`,
+      [instalacion_id, hora_inicio, hora_fin, hora_inicio, hora_fin, hora_inicio, hora_fin]
+    );
+
+    if (Array.isArray(reservasExistentes) && reservasExistentes.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Existen reservas confirmadas en ese horario'
+      });
+    }
+
+    // Insertar el mantenimiento
+    await query(
+      `INSERT INTO mantenimiento (
+        id, instalacion_id, hora_inicio, hora_fin, descripcion
+      ) VALUES (UUID(), ?, ?, ?, ?)`,
+      [instalacion_id, hora_inicio, hora_fin, descripcion]
+    );
+
+    res.json({ 
+      success: true, 
+      message: 'Mantenimiento programado exitosamente'
+    });
+  } catch (error: any) {
+    console.error('Error al programar mantenimiento:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Ruta para obtener mantenimiento activo de una instalación
+app.get('/api/mantenimiento/:instalacionId', async (req, res) => {
+  try {
+    const { instalacionId } = req.params;
+    const [mantenimiento] = await query(
+      `SELECT * FROM mantenimiento 
+       WHERE instalacion_id = ? 
+       AND hora_fin > NOW()
+       ORDER BY hora_inicio ASC
+       LIMIT 1`,
+      [instalacionId]
+    );
+
+    res.json({ success: true, data: mantenimiento || null });
+  } catch (error: any) {
+    console.error('Error al obtener mantenimiento:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Ruta para finalizar mantenimiento
+app.put('/api/mantenimiento/:id/finalizar', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await query(
+      'UPDATE mantenimiento SET hora_fin = NOW() WHERE id = ?',
+      [id]
+    );
+    res.json({ success: true, message: 'Mantenimiento finalizado exitosamente' });
+  } catch (error: any) {
+    console.error('Error al finalizar mantenimiento:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 
 // Rutas de reservas
 app.get('/api/reservas', async (req, res) => {

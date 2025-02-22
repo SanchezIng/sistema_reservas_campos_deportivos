@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Filter, Clock, MapPin, CheckCircle, XCircle } from 'lucide-react';
 import { config } from '../config/env';
 
@@ -36,10 +36,13 @@ const EstadoIndicador = ({ estado }: { estado: string }) => {
 };
 
 export default function Instalaciones() {
+  const [searchParams] = useSearchParams();
+  const tipoInicial = searchParams.get('tipo') || 'todos';
+  
   const [instalaciones, setInstalaciones] = useState<Instalacion[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filtroTipo, setFiltroTipo] = useState('todos');
+  const [filtroTipo, setFiltroTipo] = useState(tipoInicial);
   const [filtroEstado, setFiltroEstado] = useState('todos');
   const navigate = useNavigate();
 
@@ -62,6 +65,15 @@ export default function Instalaciones() {
 
     fetchInstalaciones();
   }, []);
+
+  // Actualizar la URL cuando cambia el filtro
+  useEffect(() => {
+    if (filtroTipo === 'todos') {
+      navigate('/instalaciones', { replace: true });
+    } else {
+      navigate(`/instalaciones?tipo=${filtroTipo}`, { replace: true });
+    }
+  }, [filtroTipo, navigate]);
 
   const instalacionesFiltradas = instalaciones.filter(inst => 
     (filtroTipo === 'todos' || inst.tipo === filtroTipo) &&
@@ -128,7 +140,7 @@ export default function Instalaciones() {
       {/* Lista de instalaciones */}
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
         {instalacionesFiltradas.map((instalacion) => (
-          <div key={instalacion.id} className="bg-white rounded-lg shadow-lg overflow-hidden">
+          <div key={instalacion.id} className="bg-white rounded-lg shadow-lg overflow-hidden transform transition-transform duration-300 hover:scale-105">
             <img
               src={instalacion.imagen_url}
               alt={instalacion.nombre}
